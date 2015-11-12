@@ -24,7 +24,7 @@ public class RequestHandler implements Runnable {
 			
 			JSONObject j = (JSONObject) p.parse(inJSON);
 			String party = (String) j.get("party");
-			String storedJSON = d.put(party, j.toString());			
+			String storedJSON = d.put(party, j.toString());
 			if(storedJSON == null) {
 				while(d.get(party).equals(j.toString()))
 					synchronized(d) { d.wait(); }
@@ -53,12 +53,12 @@ public class RequestHandler implements Runnable {
     }
 
 	public static String readString(Reader ir, int buffersize) throws IOException {
-	StringBuilder inJSONBuilder = new StringBuilder();
-	char[] buffer = new char[buffersize];
-	do {
-		int i = ir.read(buffer, 0, buffersize);
-		inJSONBuilder.append(buffer, 0, i);
-	} while (ir.ready());
-	return inJSONBuilder.toString();
-}
+		StringBuilder inJSONBuilder = new StringBuilder();
+		char[] buffer = new char[buffersize];
+		do {
+			int i = ir.read(buffer, 0, buffersize);
+			inJSONBuilder.append(buffer, 0, i);
+		} while (ir.ready());
+		return inJSONBuilder.toString();
+	}
 }
