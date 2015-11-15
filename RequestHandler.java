@@ -25,6 +25,8 @@ public class RequestHandler implements Runnable {
 	    if(inJSON.length() == 36) { // New receiving clients send their UUIDs, so we add them to a register and use them to transport data back
 		System.out.println("UUID Detected: " + inJSON);
 		sl.put(inJSON, s);
+		synchronized(sl) { sl.notifyAll(); }
+		synchronized(s) { s.wait(); }
 		return;
 	    }
 
@@ -41,7 +43,7 @@ public class RequestHandler implements Runnable {
 		storedJSON = d.get(party);
 		d.remove(party);
 	    } else {
-		synchronized (d) { d.notifyAll(); }
+		synchronized(d) { d.notifyAll(); }
 	    }
 
 	    while(sl.get(uuid) == null) { // Ensure we have a receiving socket
@@ -50,8 +52,9 @@ public class RequestHandler implements Runnable {
 	    
 	    Socket rs = sl.get(uuid);
 	    rs.getOutputStream().write(storedJSON.getBytes("UTF8"));
+	    synchronized(rs) { rs.notifyAll(); }
 	    rs.close();
-	    System.out.println("Closed auxillary socket" + rs.getPort());
+	    System.out.println("Closed receiving socket " + rs.getPort());
 	} catch (Exception e) {
 	    e.printStackTrace();
 	} finally {
