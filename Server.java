@@ -26,17 +26,6 @@ public class Server {
     
     public static void main(String[] args) throws InterruptedException, IOException {
 	try {
-	    Runtime.getRuntime().addShutdownHook(new Thread() {
-		    @Override
-		    public void run() {
-			synchronized(Server.all) {
-			    for(Server server : all)
-				try { server.closeSocket(); } catch (Exception e) {}
-			}
-			for(int i = 0; i < RequestHandler.all.size(); i++)
-			    try { RequestHandler.all.poll(5, TimeUnit.SECONDS).closeSocket(); } catch (Exception e) {}
-		    }
-		});
 	    Server s = new Server(Integer.parseInt(args[0]));
 	    s.run();
 	} catch (Exception e) {}
