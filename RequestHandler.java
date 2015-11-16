@@ -6,7 +6,7 @@ import org.json.simple.parser.*;
 
 public class RequestHandler implements Runnable {
 	
-    static ConcurrentHashMap<String, String> d = new ConcurrentHashMap<String, String>(16, 0.9f, 2);
+    static ConcurrentHashMap<String, JSONObject> d = new ConcurrentHashMap<String, JSONObject>(16, 0.9f, 2);
     static ConcurrentHashMap<String, Socket> sl = new ConcurrentHashMap<String, Socket>(16, 0.9f, 2);
     static ArrayBlockingQueue<RequestHandler> all = new ArrayBlockingQueue<RequestHandler>(32);
     final JSONParser p;
@@ -26,35 +26,41 @@ public class RequestHandler implements Runnable {
 		System.out.println("UUID Detected: " + inJSON);
 		sl.put(inJSON, s);
 		synchronized(sl) { sl.notifyAll(); }
-		synchronized(s) { s.wait(); }
+		while(!s.isClosed())
+		    synchronized(s) { s.wait(); }
 		return;
 	    }
+	    
+	    while(!s.isClosed()) {
+		inJSON = RequestHandler.readString(new InputStreamReader(s.getInputStream(), "UTF8"), 64);
 
-	    System.out.println("JSON Detected: " + inJSON);
+		System.out.println("JSON Detected: " + inJSON);
 	    
-	    JSONObject j = (JSONObject) p.parse(inJSON);
-	    String party = (String) j.get("party");
-	    String uuid = j.get("uuid").toString();
+		JSONObject j = (JSONObject) p.parse(inJSON);
+		String party = (String) j.get("party");
+		String uuid = j.get("uuid").toString();
 	    
-	    String storedJSON = d.put(party, j.toString());
-	    if(storedJSON == null) {
-		while(d.get(party).equals(j.toString()))
-		    synchronized(d) { d.wait(); }
-		storedJSON = d.get(party);
-		d.remove(party);
-	    } else {
-		synchronized(d) { d.notifyAll(); }
-	    }
+		JSONObject storedJSON = d.put(party, j);
+		if(storedJSON == null || storedJSON.get("uuid").equals(uuid)) { // Short circuit null check
+		    while(d.get(party).get("uuid").equals(uuid))
+			synchronized(d) { d.wait(); }
+		} else {
+		    storedJSON = d.remove(party); // Small optimization, get() might not short-circuit the if statement
+		    synchronized(d) { d.notifyAll(); }
+		}
+		
+		while(sl.get(uuid) == null) // Ensure we have a receiving socket
+	 	    synchronized(sl) { sl.wait(); }
 
-	    while(sl.get(uuid) == null) { // Ensure we have a receiving socket
-		synchronized(sl) { sl.wait(); }
+		Socket rs = sl.get(uuid);
+		
+		if(!rs.isClosed()) {
+		    rs.getOutputStream().write(storedJSON.toString().getBytes("UTF8"));
+		} else {
+		    synchronized(rs) { rs.notifyAll(); }
+		    System.out.println("Notified receiving socket " + rs.getPort() + rs.isClosed());
+		}
 	    }
-	    
-	    Socket rs = sl.get(uuid);
-	    rs.getOutputStream().write(storedJSON.getBytes("UTF8"));
-	    synchronized(rs) { rs.notifyAll(); }
-	    rs.close();
-	    System.out.println("Closed receiving socket " + rs.getPort());
 	} catch (Exception e) {
 	    e.printStackTrace();
 	} finally {
