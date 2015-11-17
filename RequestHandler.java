@@ -1,8 +1,16 @@
 import java.util.concurrent.*;
-import java.net.*;
-import java.io.*;
-import org.json.simple.*;
-import org.json.simple.parser.*;
+import java.lang.UnsupportedOperationException;
+import java.lang.StringBuilder;
+import java.net.Socket;
+import java.net.SocketException;
+import java.io.IOException;
+import java.io.Reader;
+import java.io.OutputStream;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import org.json.simple.JSONObject;
+import org.json.simple.parser.JSONParser;
+import org.json.simple.parser.ParseException;
 
 public class RequestHandler implements Runnable {
 	
@@ -20,54 +28,53 @@ public class RequestHandler implements Runnable {
 	
     public void run() {
 	try {
+	    String inJSONRaw = RequestHandler.readString(new InputStreamReader(s.getInputStream(), "UTF8"), 64);
+	    JSONObject inJSON = (JSONObject) p.parse(inJSONRaw);
 	    while(!s.isClosed()) {
-		String inJSON = RequestHandler.readString(new InputStreamReader(s.getInputStream(), "UTF8"), 64);
-
-		if(inJSON.length() == 36)
-		    registerReceivingSocket(inJSON); // New receiving clients send their UUIDs, so we add them to a register and use them to transport data back
-		else
-		    pollSendingSocket(inJSON);
+		if(inJSON.get("mode").equals("sendparty")) {
+		    pollSendingSocketParty(inJSON);
+		    inJSONRaw = RequestHandler.readString(new InputStreamReader(s.getInputStream(), "UTF8"), 64);
+		    inJSON = (JSONObject) p.parse(inJSONRaw);
+		} else if(inJSON.get("mode").equals("receiveparty")) {
+		    registerReceivingSocketParty(inJSON);
+		} else if(inJSON.get("mode").equals("receiveuuid"))
+		    throw new UnsupportedOperationException(); //registerReceivingSocketUUID(inJSON);
 	    }
 	} catch (Exception e) {
 	    e.printStackTrace();
 	}
     }
     
-    public void registerReceivingSocket(String inJSON) {
+    public void registerReceivingSocketParty(JSONObject inJSON) {
 	try {
-	    sl.put(inJSON, s);
-	    synchronized(sl) { sl.notifyAll(); }
-	    while(!s.isClosed())
-		synchronized(s) { s.wait(); }
+	    String party = (String) inJSON.get("party");
+	    String uuid = inJSON.get("uuid").toString();
+	    while(d.get(party) == null || d.get(party).get("uuid").equals(uuid)) {
+		synchronized(d) { d.wait(); }
+		System.out.println(uuid.substring(0, 3) + " awoke");
+	    } System.out.println(uuid.substring(0, 3) + " broke its lock");
+
+	    JSONObject storedJSON = d.remove(party);
+	    synchronized(d) { d.notifyAll(); }
+	    s.getOutputStream().write(storedJSON.toString().getBytes("UTF8"));
 	} catch (Exception e) {
 	    e.printStackTrace();
 	}
     }
 
-    public void pollSendingSocket(String inJSON) {
+    public void pollSendingSocketParty(JSONObject inJSON) {
 	try {
-	    JSONObject j = (JSONObject) p.parse(inJSON);
-	    String party = (String) j.get("party");
-	    String uuid = j.get("uuid").toString();
-	    
-	    JSONObject storedJSON = d.put(party, j);
-	    if(storedJSON == null || storedJSON.get("uuid").equals(uuid)) { 
-		while(d.get(party) == null || d.get(party).get("uuid").equals(uuid))
-		    synchronized(d) { d.wait(); }
-	    } else {
-		storedJSON = d.remove(party);
-		synchronized(d) { d.notifyAll(); }
-	    }
+	    String party = (String) inJSON.get("party");
+	    String uuid = inJSON.get("uuid").toString();
+	    System.out.println(uuid.substring(0, 3) + " sent new JSON.");
+	    //	    while(d.get(party) != null || !d.get(party).get("uuid").equals(uuid))
+	    //		synchronized(d) { d.wait(); }
 
-	    while(sl.get(uuid) == null) // Ensure we have a receiving socket
-		synchronized(sl) { sl.wait(); }
+	    JSONObject storedJSON = d.put(party, inJSON);
+	    synchronized(d) { d.notifyAll(); }
 
-	    Socket rs = sl.get(uuid);
 
-	    if(!rs.isClosed())
-		rs.getOutputStream().write(storedJSON.toString().getBytes("UTF8"));
-	    else
-		synchronized(rs) { rs.notifyAll(); }
+
 	} catch (Exception e) {
 	    e.printStackTrace();
 	}
