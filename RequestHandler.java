@@ -22,20 +22,30 @@ public class RequestHandler implements Runnable {
 	try {
 	    String inJSON = RequestHandler.readString(new InputStreamReader(s.getInputStream(), "UTF8"), 64);
 
-	    if(inJSON.length() == 36) { // New receiving clients send their UUIDs, so we add them to a register and use them to transport data back
-		System.out.println("UUID Detected: " + inJSON);
-		sl.put(inJSON, s);
-		synchronized(sl) { sl.notifyAll(); }
-		while(!s.isClosed())
-		    synchronized(s) { s.wait(); }
-		return;
-	    }
+	    if(inJSON.length() == 36)
+		registerReceivingSocket(inJSON); // New receiving clients send their UUIDs, so we add them to a register and use them to transport data back
+	    else
+		pollSendingSocket(inJSON);
 	    
-	    while(!s.isClosed()) {
-		inJSON = RequestHandler.readString(new InputStreamReader(s.getInputStream(), "UTF8"), 64);
+	} catch (Exception e) {
+	    e.printStackTrace();
+	}
+    }
+    
+    public void registerReceivingSocket(String inJSON) {
+	try {
+	    sl.put(inJSON, s);
+	    synchronized(sl) { sl.notifyAll(); }
+	    while(!s.isClosed())
+		synchronized(s) { s.wait(); }
+	} catch (Exception e) {
+	    e.printStackTrace();
+	}
+    }
 
-		System.out.println("JSON Detected: " + inJSON);
-	    
+    public void pollSendingSocket(String inJSON) {
+	try {
+	    while(!s.isClosed()) {
 		JSONObject j = (JSONObject) p.parse(inJSON);
 		String party = (String) j.get("party");
 		String uuid = j.get("uuid").toString();
@@ -48,29 +58,20 @@ public class RequestHandler implements Runnable {
 		    storedJSON = d.remove(party); // Small optimization, get() might not short-circuit the if statement
 		    synchronized(d) { d.notifyAll(); }
 		}
-		
+
 		while(sl.get(uuid) == null) // Ensure we have a receiving socket
-	 	    synchronized(sl) { sl.wait(); }
+		    synchronized(sl) { sl.wait(); }
 
 		Socket rs = sl.get(uuid);
-		
-		if(!rs.isClosed()) {
+
+		if(!rs.isClosed())
 		    rs.getOutputStream().write(storedJSON.toString().getBytes("UTF8"));
-		} else {
+		else
 		    synchronized(rs) { rs.notifyAll(); }
-		    System.out.println("Notified receiving socket " + rs.getPort() + rs.isClosed());
-		}
 	    }
 	} catch (Exception e) {
 	    e.printStackTrace();
-	} finally {
-	    try {
-		System.out.println("Closing socket " + s.getPort());
-		s.close();
-	    } catch (Exception e) {
-		System.out.println("Error closing a socket!");
-	    }
-	}      
+	}
     }
     
     public void closeSocket() {
