@@ -20,13 +20,14 @@ public class RequestHandler implements Runnable {
 	
     public void run() {
 	try {
-	    String inJSON = RequestHandler.readString(new InputStreamReader(s.getInputStream(), "UTF8"), 64);
+	    while(!s.isClosed()) {
+		String inJSON = RequestHandler.readString(new InputStreamReader(s.getInputStream(), "UTF8"), 64);
 
-	    if(inJSON.length() == 36)
-		registerReceivingSocket(inJSON); // New receiving clients send their UUIDs, so we add them to a register and use them to transport data back
-	    else
-		pollSendingSocket(inJSON);
-	    
+		if(inJSON.length() == 36)
+		    registerReceivingSocket(inJSON); // New receiving clients send their UUIDs, so we add them to a register and use them to transport data back
+		else
+		    pollSendingSocket(inJSON);
+	    }
 	} catch (Exception e) {
 	    e.printStackTrace();
 	}
@@ -45,30 +46,28 @@ public class RequestHandler implements Runnable {
 
     public void pollSendingSocket(String inJSON) {
 	try {
-	    while(!s.isClosed()) {
-		JSONObject j = (JSONObject) p.parse(inJSON);
-		String party = (String) j.get("party");
-		String uuid = j.get("uuid").toString();
+	    JSONObject j = (JSONObject) p.parse(inJSON);
+	    String party = (String) j.get("party");
+	    String uuid = j.get("uuid").toString();
 	    
-		JSONObject storedJSON = d.put(party, j);
-		if(storedJSON == null || storedJSON.get("uuid").equals(uuid)) { // Short circuit null check
-		    while(d.get(party).get("uuid").equals(uuid))
-			synchronized(d) { d.wait(); }
-		} else {
-		    storedJSON = d.remove(party); // Small optimization, get() might not short-circuit the if statement
-		    synchronized(d) { d.notifyAll(); }
-		}
-
-		while(sl.get(uuid) == null) // Ensure we have a receiving socket
-		    synchronized(sl) { sl.wait(); }
-
-		Socket rs = sl.get(uuid);
-
-		if(!rs.isClosed())
-		    rs.getOutputStream().write(storedJSON.toString().getBytes("UTF8"));
-		else
-		    synchronized(rs) { rs.notifyAll(); }
+	    JSONObject storedJSON = d.put(party, j);
+	    if(storedJSON == null || storedJSON.get("uuid").equals(uuid)) { 
+		while(d.get(party) == null || d.get(party).get("uuid").equals(uuid))
+		    synchronized(d) { d.wait(); }
+	    } else {
+		storedJSON = d.remove(party);
+		synchronized(d) { d.notifyAll(); }
 	    }
+
+	    while(sl.get(uuid) == null) // Ensure we have a receiving socket
+		synchronized(sl) { sl.wait(); }
+
+	    Socket rs = sl.get(uuid);
+
+	    if(!rs.isClosed())
+		rs.getOutputStream().write(storedJSON.toString().getBytes("UTF8"));
+	    else
+		synchronized(rs) { rs.notifyAll(); }
 	} catch (Exception e) {
 	    e.printStackTrace();
 	}
@@ -76,7 +75,6 @@ public class RequestHandler implements Runnable {
     
     public void closeSocket() {
 	try {
-	    System.out.println("Closing sockets...");
 	    s.close();
 	} catch (Exception e) {
 	    e.printStackTrace();
