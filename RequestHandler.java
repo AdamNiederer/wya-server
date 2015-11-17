@@ -73,14 +73,6 @@ public class RequestHandler implements Runnable {
 	}
     }
     
-    public void closeSocket() {
-	try {
-	    s.close();
-	} catch (Exception e) {
-	    e.printStackTrace();
-	} 
-    }
-    
     public static String readString(Reader ir, int buffersize) throws IOException {
 	StringBuilder inJSONBuilder = new StringBuilder();
 	char[] buffer = new char[buffersize];
